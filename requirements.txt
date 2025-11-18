@@ -1,4 +1,4 @@
-transformers==4.50.0
+transformers==4.57.1
 flash-attn==2.7.3 # or download from https://github.com/Dao-AILab/flash-attention/releases?page=1 and choose ABI false.
 deepspeed
 accelerate
