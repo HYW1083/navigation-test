@@ -13,7 +13,6 @@ import itertools
 import quaternion
 import transformers
 import numpy as np
-import time
 
 from typing import Any
 from omegaconf import OmegaConf
@@ -130,9 +129,6 @@ class VLNEvaluator:
 
 
     def eval_action(self, idx) -> None:
-        # Start timing
-        start_time = time.time()
-
         env = self.config_env()
         scene_episode_dict = {}
         for episode in env.episodes:
@@ -140,7 +136,7 @@ class VLNEvaluator:
                 scene_episode_dict[episode.scene_id] = []
             scene_episode_dict[episode.scene_id].append(episode)
 
-
+        
         sucs, spls, oss, ones = [], [], [], []
         done_res = []
         if os.path.exists(os.path.join(self.output_path, f'result.json')):
@@ -153,42 +149,18 @@ class VLNEvaluator:
                         spls.append(res['spl'])
                         oss.append(res['os'])
                         ones.append(res['ne'])
-
-        # Calculate total episodes to process
-        total_episodes = sum(len(episodes[idx::self.env_num]) for episodes in scene_episode_dict.values())
-        already_done = len(done_res)
-        episodes_to_process = total_episodes - already_done
-
-        if get_rank() == 0:
-            print(f"\n{'='*60}")
-            print(f"Starting Evaluation - Process {idx}/{self.env_num}")
-            print(f"Total episodes assigned: {total_episodes}")
-            print(f"Already completed: {already_done}")
-            print(f"Remaining to process: {episodes_to_process}")
-            print(f"{'='*60}\n")
-
-        # Create global progress bar
-        global_pbar = tqdm.tqdm(
-            total=total_episodes,
-            desc=f"Rank {idx} Progress",
-            initial=already_done,
-            position=idx,
-            leave=True
-        )
-
+        
         for scene in sorted(scene_episode_dict.keys()):
             episodes = scene_episode_dict[scene]
             scene_id = scene.split('/')[-2]
-
+            print(f"scene_id = {scene_id}")
+            
+            process_bar = tqdm.tqdm(range(len(episodes[idx::self.env_num])), desc=f"scene {scene_id}")
             for episode in episodes[idx::self.env_num]:
                 episode_instruction = episode.instruction.instruction_text if 'objectnav' not in self.config_path else episode.object_category
+                print("episode start: ",episode_instruction)
                 episode_id = episode.episode_id
-
-                # Update progress bar description with current scene and episode
-                global_pbar.set_description(f"Rank {idx} | Scene {scene_id} | Ep {episode_id}")
-
                 if [scene_id, episode_id, episode_instruction] in done_res:
-                    global_pbar.update(1)
                     continue
 
                 env.current_episode = episode
@@ -245,6 +217,7 @@ class VLNEvaluator:
                     observations = env.step(action)
                     step_id += 1
 
+                process_bar.update(1)
                 metrics = env.get_metrics()
                 if should_save_video:
                     images_to_video(
@@ -255,7 +228,7 @@ class VLNEvaluator:
                 spls.append(metrics['spl'])
                 oss.append(metrics['oracle_success'])
                 ones.append(metrics['distance_to_goal'])
-
+                print(f"scene_episode {scene_id}_{episode_id} success: {metrics['success']}, spl: {metrics['spl']}, os: {metrics['oracle_success']}, ne: {metrics['distance_to_goal']}")
                 result = {
                     "scene_id": scene_id,
                     "episode_id": episode_id,
@@ -266,42 +239,9 @@ class VLNEvaluator:
                     "steps": step_id,
                     "episode_instruction": episode_instruction
                 }
-
+                
                 with open(os.path.join(self.output_path, f'result.json'), 'a') as f:
                     f.write(json.dumps(result) + "\n")
-
-                # Update progress bar with latest metrics
-                global_pbar.set_postfix({
-                    'SR': f"{metrics['success']:.2f}",
-                    'SPL': f"{metrics['spl']:.3f}",
-                    'Steps': step_id
-                })
-                global_pbar.update(1)
-
-        # Close progress bar
-        global_pbar.close()
-
-        # Calculate and print timing statistics
-        end_time = time.time()
-        total_time = end_time - start_time
-        hours = int(total_time // 3600)
-        minutes = int((total_time % 3600) // 60)
-        seconds = int(total_time % 60)
-
-        if get_rank() == 0:
-            print(f"\n{'='*60}")
-            print(f"Evaluation Complete - Process {idx}/{self.env_num}")
-            print(f"Total episodes processed: {len(sucs)}")
-            print(f"Total time: {hours}h {minutes}m {seconds}s ({total_time:.2f}s)")
-            if len(sucs) > 0:
-                avg_time_per_episode = total_time / len(sucs)
-                print(f"Average time per episode: {avg_time_per_episode:.2f}s")
-                print(f"Current metrics:")
-                print(f"  Success Rate: {sum(sucs)/len(sucs)*100:.2f}%")
-                print(f"  SPL: {sum(spls)/len(spls):.4f}")
-                print(f"  Oracle Success: {sum(oss)/len(oss)*100:.2f}%")
-                print(f"  Distance to Goal: {sum(ones)/len(ones):.3f}m")
-            print(f"{'='*60}\n")
 
         env.close()
         return torch.tensor(sucs).to(self.device), torch.tensor(spls).to(self.device), torch.tensor(oss).to(self.device), torch.tensor(ones).to(self.device), torch.tensor(len(sucs)).to(self.device)     
@@ -469,9 +409,7 @@ def eval():
 
 
 def evaluate(model, args):
-    # Start total timing
-    eval_start_time = time.time()
-
+    
     world_size = get_world_size()
 
     evaluator = VLNEvaluator(
@@ -500,36 +438,16 @@ def evaluate(model, args):
     spls_all = torch.cat(spls_all, dim=0)
     oss_all = torch.cat(oss_all, dim=0)
     ones_all = torch.cat(ones_all, dim=0)
-    # Calculate total evaluation time
-    eval_end_time = time.time()
-    eval_total_time = eval_end_time - eval_start_time
-    eval_hours = int(eval_total_time // 3600)
-    eval_minutes = int((eval_total_time % 3600) // 60)
-    eval_seconds = int(eval_total_time % 60)
-
     result_all = {
                     "sucs_all": (sum(sucs_all)/len(sucs_all)).item(),
                     "spls_all": (sum(spls_all)/len(spls_all)).item(),
                     "oss_all": (sum(oss_all)/len(oss_all)).item(),
                     "ones_all": (sum(ones_all)/len(ones_all)).item(),
-                    'length': len(sucs_all),
-                    'total_time_seconds': eval_total_time,
-                    'total_time_formatted': f"{eval_hours}h {eval_minutes}m {eval_seconds}s"
+                    'length': len(sucs_all)
                 }
-
+    
+    print(result_all)
     if get_rank() == 0:
-        print(f"\n{'='*70}")
-        print(f"FINAL EVALUATION RESULTS")
-        print(f"{'='*70}")
-        print(f"Total Episodes: {len(sucs_all)}")
-        print(f"Success Rate: {result_all['sucs_all']*100:.2f}%")
-        print(f"SPL: {result_all['spls_all']:.4f}")
-        print(f"Oracle Success: {result_all['oss_all']*100:.2f}%")
-        print(f"Navigation Error: {result_all['ones_all']:.3f}m")
-        print(f"Total Evaluation Time: {eval_hours}h {eval_minutes}m {eval_seconds}s")
-        print(f"Average Time per Episode: {eval_total_time/len(sucs_all):.2f}s")
-        print(f"{'='*70}\n")
-
         with open(os.path.join(args.output_path, f'result.json'), 'a') as f:
             f.write(json.dumps(result_all))
 
