@@ -36,4 +36,5 @@ protobuf
 qwen_vl_utils
 spicy
 terminaltables
+fastdtw
 
