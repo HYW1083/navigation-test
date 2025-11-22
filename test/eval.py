@@ -375,7 +375,7 @@ def eval():
     parser.add_argument("--model_path", type=str, default="")
     parser.add_argument("--habitat_config_path", type=str, default='config/vln_r2r.yaml')
     parser.add_argument("--eval_split", type=str, default='val_unseen')
-    parser.add_argument("--output_path", type=str, default='./results/val_unseen/streamvln')
+    parser.add_argument("--output_path", type=str, default='./results/val_unseen')
     parser.add_argument("--save_video", action="store_true", default=False)
     parser.add_argument("--num_history", type=int, default=8)
     parser.add_argument("--model_max_length", type=int, default=4096,
