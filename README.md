@@ -17,8 +17,7 @@ pip install -r requirements.txt
 
 pip install -e .
 ```
-安装[flash-atten-2.7.3](https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.3/flash_attn-2.7.3+cu12torch2.5cxx11abiFALSE-cp39-cp39-linux_x86_64.whl),之后使用
-
+安装[flash-atten-2.7.3](https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.3/flash_attn-2.7.3+cu12torch2.6cxx11abiFALSE-cp39-cp39-linux_x86_64.whl)
 ```bash
-pip install flash_attn-2.7.3+cu12torch2.5cxx11abiFALSE-cp39-cp39-linux_x86_64.whl
+pip install flash_attn-2.7.3+cu12torch2.6cxx11abiFALSE-cp39-cp39-linux_x86_64.whl
 ```
